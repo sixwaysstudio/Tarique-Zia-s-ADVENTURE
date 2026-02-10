@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adventure OF Tarique Zia</title>
+    <link rel="icon" type="image/png" href="assets/face.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- Door Loading Screen -->
+    <div id="door-container">
+        <div class="door-panel left"></div>
+        <div class="door-panel right"></div>
+        <img src="assets/poster.png" id="loading-poster" alt="Loading Poster">
+        <div id="loading-text">Loading Game...</div>
+    </div>
+    <div id="game-wrapper">
+        <!-- HUD -->
+        <div id="hud">
+            <div id="health-container">
+                <span class="heart">❤️</span>
+                <span class="heart">❤️</span>
+                <span class="heart">❤️</span>
+            </div>
+            <div id="score-container">
+                <div id="score-display">Khamba Collected: 0</div>
+                <div id="highscore-display">Highest Khamba Collected: 0</div>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Settings Button -->
+        <button id="settings-btn" class="ui-btn">⚙️</button>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="hidden">
+            <div class="modal-content">
+                <h2>Game Settings</h2>
+
+                <div class="setting-row">
+                    <label>Background Music:</label>
+                    <button id="bgm-toggle" class="toggle-btn on">ON</button>
+                </div>
+
+                <div class="setting-row">
+                    <label>BGM Volume:</label>
+                    <div class="volume-control">
+                        <input type="range" id="bgm-volume" min="0" max="100" value="30" class="volume-slider">
+                        <span id="volume-label">30%</span>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <label>Difficulty:</label>
+                    <select id="difficulty-select">
+                        <option value="EASY">Easy</option>
+                        <option value="NORMAL" selected>Normal</option>
+                        <option value="HARD">Hard</option>
+                    </select>
+                </div>
+
+                <button id="close-settings" class="ui-btn primary">Close</button>
+            </div>
+        </div>
+
+        <!-- Note / Objective Button -->
+        <button id="note-btn" class="ui-btn">📝</button>
+
+        <!-- Note Modal -->
+        <div id="note-modal" class="hidden">
+            <div class="modal-content">
+                <h2>Mission Objectives</h2>
+                <div style="text-align: left; margin: 20px 0; font-size: 18px;">
+                    <p>🎯 <b>Collect 50 Khamba</b><br>to spawn <b>Sheikh Hasina</b></p>
+                    <p>🎯 <b>Collect 100 Khamba</b><br>to spawn <b>Jamat</b></p>
+                </div>
+                <button id="close-note" class="ui-btn primary">Resume</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="controls">
+        <div class="control-group">
+            <button id="btn-left" class="control-btn">←</button>
+            <button id="btn-right" class="control-btn">→</button>
+        </div>
+        <button id="btn-jump" class="control-btn">↨</button>
+    </div>
+    <script src="game.js"></script>
+    <script src="jamat.js"></script>
+</body>
+
+</html>
