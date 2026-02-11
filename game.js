@@ -2090,7 +2090,7 @@ window.hasinaConfig = {
     width: 350,
     height: 350,
     hp: 3,               // Boss HP
-    speed: 2,            // Boss Movement Speed
+    speed: 8,            // Boss Movement Speed
     missileInterval: 200, // Frames between missile waves
     missileWidth: 120,   // Missile Width
     missileHeight: 120,  // Missile Height
