@@ -34,7 +34,7 @@ window.jamatConfig = {
         bulletWidth: 40,
         bulletHeight: 20
     },
-    debugSpawnKey: 'r'
+    debugSpawnKey: ''
 };
 
 // ==========================================
