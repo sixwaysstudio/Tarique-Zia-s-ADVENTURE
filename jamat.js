@@ -395,7 +395,12 @@ class Jamat {
 //  INTEGRATION: Spawn Jamat Boss
 // ==========================================
 
-(function () {
+window.addEventListener('load', function () {
+    if (typeof Environment === 'undefined') {
+        console.error("Environment class not found! Jamat boss cannot be integrated.");
+        return;
+    }
+
     // Add spawnJamat method to Environment
     Environment.prototype.spawnJamat = function (cameraX) {
         const x = cameraX + CONFIG.canvas.width + 100;
@@ -474,4 +479,5 @@ class Jamat {
             window.spawnJamat();
         }
     });
-})();
+
+});

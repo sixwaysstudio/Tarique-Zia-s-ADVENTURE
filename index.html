@@ -28,10 +28,14 @@
             <div id="score-container">
                 <div id="score-display">Khamba Collected: 0</div>
                 <div id="highscore-display">Highest Khamba Collected: 0</div>
+                <div id="fps-display" style="font-size: 14px; color: lime;">FPS: 60</div>
             </div>
         </div>
 
         <canvas id="gameCanvas"></canvas>
+
+        <!-- Fullscreen Button (Mobile Only) -->
+        <button id="fullscreen-btn" class="ui-btn hidden">⛶</button>
 
         <!-- Settings Button -->
         <button id="settings-btn" class="ui-btn">⚙️</button>
@@ -56,10 +60,29 @@
 
                 <div class="setting-row">
                     <label>Difficulty:</label>
-                    <select id="difficulty-select">
+                    <select id="difficulty-select" class="ui-select">
                         <option value="EASY">Easy</option>
                         <option value="NORMAL" selected>Normal</option>
                         <option value="HARD">Hard</option>
+                    </select>
+                </div>
+
+                <div class="setting-row">
+                    <label>Graphics:</label>
+                    <select id="graphics-select" class="ui-select">
+                        <option value="HIGH">High (Sharp)</option>
+                        <option value="MEDIUM" selected>Balanced</option>
+                        <option value="LOW">Fast (Blurry)</option>
+                    </select>
+                </div>
+
+                <div class="setting-row">
+                    <label>Max FPS:</label>
+                    <select id="fps-select" class="ui-select">
+                        <option value="60" selected>60 FPS</option>
+                        <option value="45">45 FPS</option>
+                        <option value="30">30 FPS</option>
+                        <option value="UNCAPPED">Uncapped</option>
                     </select>
                 </div>
 
@@ -86,10 +109,10 @@
     <!-- Mobile Controls -->
     <div id="controls">
         <div class="control-group">
-            <button id="btn-left" class="control-btn">←</button>
-            <button id="btn-right" class="control-btn">→</button>
+            <button id="btn-left" class="control-btn">◀</button>
+            <button id="btn-right" class="control-btn">▶</button>
         </div>
-        <button id="btn-jump" class="control-btn">↨</button>
+        <button id="btn-jump" class="control-btn">▲</button>
     </div>
     <script src="game.js"></script>
     <script src="jamat.js"></script>

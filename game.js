@@ -62,13 +62,42 @@ let bossWarning = { active: false, timer: 0, text: '' };
 canvas.width = CONFIG.canvas.width;
 canvas.height = CONFIG.canvas.height;
 
+// ==========================================
+//  SETTINGS MANAGER (Moved to top for init)
+// ==========================================
+const defaultSettings = {
+    bgm: true,
+    difficulty: 'NORMAL',
+    volume: 50, // %
+    volume: 50, // %
+    graphics: 'MEDIUM', // HIGH, MEDIUM, LOW
+    maxFPS: '60' // 30, 45, 60, UNCAPPED
+};
+
+let gameSettings = JSON.parse(localStorage.getItem('adventureSettings')) || defaultSettings;
+
+function saveSettings() {
+    localStorage.setItem('adventureSettings', JSON.stringify(gameSettings));
+}
+// Ensure graphics default is set if missing from old save
+if (!gameSettings.graphics) {
+    gameSettings.graphics = 'HIGH';
+    saveSettings();
+}
+
 // Resize Handler
 // Resize Handler
 let gameScale = 1;
 function handleResize() {
     // High DPI Support (Crisp text/images on mobile)
-    // Cap at 2.0 to prevent performance issues on mid-range devices
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Graphics Setting Logic
+    let dpr = window.devicePixelRatio || 1;
+    if (gameSettings.graphics === 'MEDIUM') {
+        dpr = Math.min(dpr, 2.0);
+    } else if (gameSettings.graphics === 'LOW') {
+        dpr = 1.0; // Force 1x for maximum performance
+    }
+    // HIGH = Uncapped (Native)
 
     // Physical pixels (Resolution)
     canvas.width = window.innerWidth * dpr;
@@ -84,8 +113,23 @@ function handleResize() {
 
     if (gameScale < 0.001) gameScale = 0.001;
 }
+
 window.addEventListener('resize', handleResize);
 handleResize();
+
+// Fullscreen Logic
+const fsBtn = document.getElementById('fullscreen-btn');
+if (fsBtn) {
+    fsBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.log(`Error attempting to enable fullscreen: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    });
+}
 
 // ==========================================
 //  SOUND MANAGER (Synthesized Audio)
@@ -94,6 +138,27 @@ class SoundManager {
     constructor() {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         this.enabled = true;
+        this.unlocked = false;
+
+        // Unlock audio on first interaction
+        const unlock = () => {
+            if (this.unlocked) return;
+            this.unlocked = true;
+            this.resume();
+
+            // "Warm up" the audio element (Fix for iOS/Mobile requiring play inside event)
+            if (this.bgMusic) {
+                this.bgMusic.play().then(() => {
+                    this.bgMusic.pause();
+                    this.bgMusic.currentTime = 0;
+                }).catch((e) => {
+                    console.log("Audio warmup failed (harmless):", e);
+                });
+            }
+
+            ['click', 'touchstart', 'keydown'].forEach(e => document.removeEventListener(e, unlock));
+        };
+        ['click', 'touchstart', 'keydown'].forEach(e => document.addEventListener(e, unlock, { once: true }));
 
         // Load custom audio
         this.gameOverSound = new Audio('sound/We Have a.mp3');
@@ -123,6 +188,42 @@ class SoundManager {
         this.helicopterSound = new Audio('sound/helicopter.mp3');
         this.helicopterSound.volume = 0.4;
         this.helicopterSound.loop = true;
+
+        // AUDIO POOLING (Fixes frame drops on mobile)
+        this.shotPool = [];
+        this.blastPool = [];
+        this.poolSize = 10;
+        this.initPools();
+    }
+
+    initPools() {
+        for (let i = 0; i < this.poolSize; i++) {
+            const s = this.shotSound.cloneNode();
+            s.volume = 0.3; // Default Shot Volume
+            this.shotPool.push(s);
+
+            const b = this.blastSound.cloneNode();
+            b.volume = 0.5; // Default Blast Volume
+            this.blastPool.push(b);
+        }
+    }
+
+    playFromPool(pool) {
+        if (!this.enabled) return;
+        // Find a paused sound or one that is done
+        let sound = pool.find(s => s.paused || s.ended);
+        // If all busy, steal the first one (oldest)
+        if (!sound) {
+            sound = pool[0];
+            sound.currentTime = 0;
+        }
+        sound.play().catch(e => { }); // Ignore play errors
+
+        // Move to end to rotate usage
+        const idx = pool.indexOf(sound);
+        if (idx > -1) {
+            pool.push(pool.splice(idx, 1)[0]);
+        }
     }
 
     playJump() {
@@ -255,17 +356,12 @@ class SoundManager {
 
     playExplosion() {
         if (!this.enabled) return;
-        // Play overlap-safe sound
-        const sound = this.blastSound.cloneNode();
-        sound.volume = 0.5;
-        sound.play().catch(e => console.log("Blast play failed:", e));
+        this.playFromPool(this.blastPool);
     }
 
     playShot() {
         if (!this.enabled) return;
-        const sound = this.shotSound.cloneNode();
-        sound.volume = 0.3;
-        sound.play().catch(e => console.log("Shot play failed:", e));
+        this.playFromPool(this.shotPool);
     }
 
     playShotBurst(count = 1, interval = 100) {
@@ -297,7 +393,15 @@ class SoundManager {
         if (typeof gameSettings !== 'undefined' && !gameSettings.bgm) return;
         // Check if already playing
         if (this.bgMusic.paused) {
-            this.bgMusic.play().catch(e => console.log("BG Music play failed:", e));
+            this.bgMusic.play().then(() => {
+                // Success
+            }).catch(e => {
+                console.log("BG Music play failed:", e);
+                // Retry once after a short delay (fixes some race conditions)
+                setTimeout(() => {
+                    this.bgMusic.play().catch(e2 => console.log("BG Music Retry failed:", e2));
+                }, 500);
+            });
         }
     }
 
@@ -320,36 +424,62 @@ class SoundManager {
 class ParticleSystem {
     constructor() {
         this.particles = [];
-    }
-
-    emit(x, y, color = 'yellow', count = 10) {
-        for (let i = 0; i < count; i++) {
-            this.particles.push({
-                x: x,
-                y: y,
-                vx: (Math.random() - 0.5) * 10,
-                vy: (Math.random() - 0.5) * 10,
-                life: 1.0,
-                color: color
+        this.pool = [];
+        // Pre-allocate pool
+        for (let i = 0; i < 50; i++) {
+            this.pool.push({
+                x: 0, y: 0, vx: 0, vy: 0, life: 0, color: 'white', active: false
             });
         }
     }
 
+    emit(x, y, color = 'yellow', count = 10) {
+        for (let i = 0; i < count; i++) {
+            let p;
+            if (this.pool.length > 0) {
+                p = this.pool.pop();
+            } else {
+                p = { active: false }; // Grow if needed
+            }
+
+            p.active = true;
+            p.x = x;
+            p.y = y;
+            p.vx = (Math.random() - 0.5) * 10;
+            p.vy = (Math.random() - 0.5) * 10;
+            p.life = 1.0;
+            p.color = color;
+
+            this.particles.push(p);
+        }
+    }
+
     update(timeScale = 1) {
-        this.particles.forEach(p => {
+        // Reverse loop to allow safe removal
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            let p = this.particles[i];
             p.x += p.vx * timeScale;
             p.y += p.vy * timeScale;
             p.life -= 0.02 * timeScale;
-        });
-        this.particles = this.particles.filter(p => p.life > 0);
+
+            if (p.life <= 0) {
+                p.active = false;
+                // Return to pool
+                this.pool.push(p);
+                // Fast remove from active list
+                this.particles[i] = this.particles[this.particles.length - 1];
+                this.particles.pop();
+            }
+        }
     }
 
     draw(ctx, cameraX) {
         this.particles.forEach(p => {
+            if (!p.active) return;
             ctx.globalAlpha = p.life;
             ctx.fillStyle = p.color;
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); // Corrected coordinates (context is already transformed)
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
             ctx.fill();
             ctx.globalAlpha = 1.0;
         });
@@ -681,7 +811,11 @@ class Player {
 }
 
 class Bullet {
-    constructor(x, y, isRight) {
+    constructor() {
+        this.reset(0, 0, true);
+    }
+
+    reset(x, y, isRight) {
         this.x = x;
         this.y = y;
         this.width = CONFIG.environment.enemies.bullet.width;
@@ -692,10 +826,17 @@ class Bullet {
     }
 
     update(timeScale = 1) {
+        if (!this.active) return;
         this.x += this.vx * timeScale;
     }
 
     draw(ctx) {
+        if (!this.active) return;
+
+        // CULLING OPTIMIZATION
+        const viewW = canvas.width / gameScale;
+        if (this.x + this.width < camera.x || this.x > camera.x + viewW) return;
+
         if (images.bullet) {
             ctx.save();
             ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
@@ -788,7 +929,9 @@ class Enemy {
             const spacing = 60; // Gap between bullets
             const offset = i * spacing;
             const bx = this.facingRight ? (startX - offset) : (startX + offset);
-            bullets.push(new Bullet(bx, startY, this.facingRight));
+            // Use Pool
+            const b = getBullet(bx, startY, this.facingRight);
+            bullets.push(b);
         }
 
         if (typeof soundManager !== 'undefined') {
@@ -798,6 +941,11 @@ class Enemy {
 
     draw(ctx) {
         if (!this.active) return;
+
+        // CULLING OPTIMIZATION
+        // If off-screen, don't draw
+        const viewW = canvas.width / gameScale;
+        if (this.x + this.width < camera.x || this.x > camera.x + viewW) return;
 
         let imgKey = `${this.type}_stand`;
         if (this.state === 'SHOOT') imgKey = `${this.type}_shoot`;
@@ -1095,13 +1243,21 @@ class Environment {
             }
         }
 
+
         // Cleanup
         const cleanupThreshold = cameraX - 3000;
         this.trees = this.trees.filter(t => t.x > cleanupThreshold);
         this.obstacles = this.obstacles.filter(o => o.x > cleanupThreshold);
         this.enemies = this.enemies.filter(e => e.x > cleanupThreshold);
         this.heartPickups = this.heartPickups.filter(h => h.x > cleanupThreshold);
-        bullets = bullets.filter(b => b.x > cleanupThreshold && b.x < cameraX + 4000);
+
+        // Bullet Cleanup (Pool)
+        bullets.forEach(b => {
+            if (b.x > cameraX + 4000 || b.x < cleanupThreshold) {
+                b.active = false; // Return to pool implicitly
+            }
+        });
+        bullets = bullets.filter(b => b.active);
 
         // Update Boss
         if (this.boss) {
@@ -1421,24 +1577,42 @@ class Environment {
 // ==========================================
 //  HUD & SCORE
 // ==========================================
+const hudCache = {
+    scoreEl: null,
+    highEl: null,
+    healthContainer: null,
+    lastScore: -1,
+    lastHealth: -1
+};
+
 function updateHUD() {
-    // Score
-    const scoreEl = document.getElementById('score-display');
-    if (scoreEl) scoreEl.innerText = "Khamba Collected: " + gameState.score;
+    // Init Cache logic
+    if (!hudCache.scoreEl) {
+        hudCache.scoreEl = document.getElementById('score-display');
+        hudCache.highEl = document.getElementById('highscore-display');
+        hudCache.healthContainer = document.getElementById('health-container');
+    }
 
-    const highEl = document.getElementById('highscore-display');
-    if (highEl) highEl.innerText = "Highest Khamba Collected: " + (gameState.highScore || 0);
+    // Update Score (Only if changed)
+    if (gameState.score !== hudCache.lastScore) {
+        if (hudCache.scoreEl) hudCache.scoreEl.innerText = "Khamba Collected: " + gameState.score;
+        if (hudCache.highEl) hudCache.highEl.innerText = "Highest Khamba Collected: " + (gameState.highScore || 0);
+        hudCache.lastScore = gameState.score;
+    }
 
-    // Health
-    const healthContainer = document.getElementById('health-container');
-    if (healthContainer && player) {
-        healthContainer.innerHTML = '';
-        for (let i = 0; i < player.health; i++) {
-            const span = document.createElement('span');
-            span.className = 'heart';
-            span.innerText = '❤️';
-            healthContainer.appendChild(span);
+    // Update Health (Only if changed)
+    // Also, we assume player exists if we are updating HUD
+    if (player && player.health !== hudCache.lastHealth) {
+        if (hudCache.healthContainer) {
+            hudCache.healthContainer.innerHTML = '';
+            for (let i = 0; i < player.health; i++) {
+                const span = document.createElement('span');
+                span.className = 'heart';
+                span.innerText = '❤️';
+                hudCache.healthContainer.appendChild(span);
+            }
         }
+        hudCache.lastHealth = player.health;
     }
 }
 
@@ -1458,7 +1632,74 @@ function loadAssets(cb) {
         img.src = assets[key];
         img.onload = () => { loaded++; if (loaded === total) cb(); };
         img.onerror = () => { loaded++; if (loaded === total) cb(); }; // Proceed even if missing
+
+        // Runtime Asset Resizing (Crucial for Mobile Memory)
+        if (key === 'poster' || key === 'mc' || key === 'gbg') {
+            img.onload = () => {
+                // Resize Logic
+                const tempCanvas = document.createElement('canvas');
+                const tCtx = tempCanvas.getContext('2d');
+
+                // Target Max Dimensions (e.g. 1080p equivalent)
+                let maxW = 1024; // Cap width
+                let maxH = 1024; // Cap height
+
+                if (key === 'poster') { maxW = 1920; maxH = 1080; }
+                if (key === 'gbg') { maxW = 2048; maxH = 2048; }
+
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxW || height > maxH) {
+                    if (width > height) {
+                        if (width > maxW) {
+                            height *= maxW / width;
+                            width = maxW;
+                        }
+                    } else {
+                        if (height > maxH) {
+                            width *= maxH / height;
+                            height = maxH;
+                        }
+                    }
+
+                    tempCanvas.width = width;
+                    tempCanvas.height = height;
+                    tCtx.drawImage(img, 0, 0, width, height);
+
+                    // Replace source with smaller version
+                    const newImg = new Image();
+                    newImg.src = tempCanvas.toDataURL('image/png');
+                    newImg.onload = () => {
+                        loaded++;
+                        if (loaded === total) cb();
+                    };
+                    images[key] = newImg;
+                } else {
+                    loaded++;
+                    if (loaded === total) cb();
+                }
+            };
+        } else {
+            img.onload = () => { loaded++; if (loaded === total) cb(); };
+        }
+
         images[key] = img;
+    }
+}
+
+// BULLET POOLING (Reduces GC Stutters)
+const bulletPool = [];
+function getBullet(x, y, isRight) {
+    const b = bulletPool.find(b => !b.active);
+    if (b) {
+        b.reset(x, y, isRight);
+        return b;
+    } else {
+        const newB = new Bullet();
+        newB.reset(x, y, isRight);
+        bulletPool.push(newB);
+        return newB;
     }
 }
 
@@ -1493,11 +1734,39 @@ function gameOver() {
 //...
 
 let lastTime = 0;
+let fps = 0;
+let frameCount = 0;
+let lastFpsTime = 0;
+let lastFrameTime = 0;
 
 function gameLoop(timestamp) {
+    // 1. Throttle Frame Rate
+    if (gameSettings.maxFPS && gameSettings.maxFPS !== 'UNCAPPED') {
+        const targetFPS = parseInt(gameSettings.maxFPS);
+        const interval = 1000 / targetFPS;
+        // Tolerance of 2ms to align with VSync
+        if (timestamp < lastFrameTime + interval - 2) {
+            requestAnimationFrame(gameLoop);
+            return;
+        }
+    }
+    lastFrameTime = timestamp;
+
     if (!lastTime) lastTime = timestamp;
     let deltaTime = timestamp - lastTime;
     lastTime = timestamp;
+
+    // Output FPS every second
+    if (timestamp > lastFpsTime + 1000) {
+        fps = Math.round((frameCount * 1000) / (timestamp - lastFpsTime));
+        frameCount = 0;
+        lastFpsTime = timestamp;
+        // Optional: Log or display FPS
+        // console.log("FPS:", fps);
+        const fpsEl = document.getElementById('fps-display');
+        if (fpsEl) fpsEl.innerText = `FPS: ${fps}`;
+    }
+    frameCount++;
 
     // Cap deltaTime to prevent huge jumps (e.g. tab switch)
     // 60fps = 16.6ms. 240fps = 4ms. 
@@ -1517,6 +1786,7 @@ function gameLoop(timestamp) {
     // Update Enemies & Bullets
     environment.enemies.forEach(e => e.update(player, timeScale));
     bullets.forEach(b => b.update(timeScale));
+    bullets = bullets.filter(b => b.active); // Remove inactive from active list (they stay in pool)
 
     environment.checkCollisions(player);
     particles.update(timeScale);
@@ -1727,34 +1997,9 @@ function drawUI() {
 }
 
 // ==========================================
-//  SETTINGS LOGIC
+//  SETTINGS LOGIC (Definitions moved to top)
 // ==========================================
-const gameSettings = {
-    bgm: true,
-    difficulty: 'NORMAL', // 'EASY', 'NORMAL', 'HARD'
-    volume: 30 // 0-100
-};
 
-function saveSettings() {
-    localStorage.setItem('gameSettings', JSON.stringify(gameSettings));
-}
-
-function loadSettings() {
-    const saved = localStorage.getItem('gameSettings');
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            if (parsed.bgm !== undefined) gameSettings.bgm = parsed.bgm;
-            if (parsed.difficulty) gameSettings.difficulty = parsed.difficulty;
-            if (parsed.volume !== undefined) gameSettings.volume = parsed.volume;
-        } catch (e) {
-            console.error("Failed to load settings:", e);
-        }
-    }
-}
-
-// Load immediately
-loadSettings();
 
 const settingsBtn = document.getElementById('settings-btn');
 const settingsModal = document.getElementById('settings-modal');
@@ -1918,6 +2163,30 @@ if (bgmVolume) {
     });
 }
 
+// Graphics Setting
+const graphicsSelect = document.getElementById('graphics-select');
+if (graphicsSelect) {
+    graphicsSelect.addEventListener('change', (e) => {
+        e.stopPropagation();
+        gameSettings.graphics = e.target.value;
+        console.log("Graphics set to:", gameSettings.graphics);
+        saveSettings();
+        // Apply immediately
+        handleResize();
+    });
+}
+
+// Max FPS Setting
+const fpsSelect = document.getElementById('fps-select');
+if (fpsSelect) {
+    fpsSelect.addEventListener('change', (e) => {
+        e.stopPropagation();
+        gameSettings.maxFPS = e.target.value;
+        console.log("Max FPS set to:", gameSettings.maxFPS);
+        saveSettings();
+    });
+}
+
 // Initialize UI from loaded settings
 if (gameSettings.bgm !== undefined && bgmToggle) {
     bgmToggle.textContent = gameSettings.bgm ? "ON" : "OFF";
@@ -1925,6 +2194,20 @@ if (gameSettings.bgm !== undefined && bgmToggle) {
 }
 if (gameSettings.difficulty && difficultySelect) {
     difficultySelect.value = gameSettings.difficulty;
+}
+if (gameSettings.graphics && graphicsSelect) {
+    graphicsSelect.value = gameSettings.graphics;
+} else if (graphicsSelect) {
+    // Default to MEDIUM (Balanced) if not set
+    gameSettings.graphics = 'MEDIUM';
+    graphicsSelect.value = 'MEDIUM';
+}
+if (gameSettings.maxFPS && fpsSelect) {
+    fpsSelect.value = gameSettings.maxFPS;
+} else if (fpsSelect) {
+    // Default to 60 (Requested)
+    gameSettings.maxFPS = '60';
+    fpsSelect.value = '60';
 }
 if (gameSettings.volume !== undefined && bgmVolume) {
     bgmVolume.value = gameSettings.volume;

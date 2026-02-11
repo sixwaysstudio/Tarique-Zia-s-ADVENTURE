@@ -1,3 +1,7 @@
+* {
+    box-sizing: border-box;
+}
+
 body,
 html {
     margin: 0;
@@ -386,4 +390,80 @@ canvas {
     color: #FFD700;
     /* Gold */
     margin-top: 5px;
+}
+
+/* ===========================
+   MOBILE UI OVERRIDES
+   =========================== */
+@media (max-width: 1024px) {
+
+    /* Full width HUD with padding for mobile */
+    #hud {
+        width: 100%;
+        left: 0;
+        padding: 0 20px;
+        box-sizing: border-box;
+        /* Ensure padding doesn't overflow */
+    }
+
+    /* Move Note Button to Top Right (Next to Settings) */
+    #note-btn {
+        left: auto;
+        right: 90px;
+        /* settings is at right: 20px. Button width ~50px? */
+        transform: none;
+    }
+
+    /* Push Score Down to clear buttons */
+    #score-container {
+        margin-top: 70px;
+    }
+
+    /* Smaller Text for Mobile */
+    #score-display {
+        font-size: 24px;
+    }
+
+    #highscore-display {
+        font-size: 14px;
+    }
+
+    .heart {
+        font-size: 24px;
+    }
+
+    /* Glassmorphism for Controls */
+    .control-btn {
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        width: 70px;
+        /* Slightly smaller on mobile if needed, or keep 80 */
+        height: 70px;
+        font-size: 24px;
+    }
+
+    #controls {
+        padding-bottom: 40px;
+        /* Lift up from bottom edge */
+    }
+
+    #fullscreen-btn {
+        display: block !important;
+        /* Show on mobile */
+        position: absolute;
+        top: 20px;
+        left: auto;
+        right: 160px;
+        /* Next to Note button */
+        /* Top Left */
+        z-index: 1000;
+    }
+}
+
+#fullscreen-btn {
+    display: none;
+    /* Hidden by default on desktop */
 }
