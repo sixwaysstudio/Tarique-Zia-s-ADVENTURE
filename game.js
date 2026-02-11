@@ -65,13 +65,17 @@ canvas.height = CONFIG.canvas.height;
 // ==========================================
 //  SETTINGS MANAGER (Moved to top for init)
 // ==========================================
+
+// Device Detection
+const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && window.innerWidth < 1024);
+
 const defaultSettings = {
     bgm: true,
     difficulty: 'NORMAL',
     volume: 50, // %
-    volume: 50, // %
-    graphics: 'MEDIUM', // HIGH, MEDIUM, LOW
-    maxFPS: '60' // 30, 45, 60, UNCAPPED
+    graphics: isMobile ? 'MEDIUM' : 'HIGH',
+    maxFPS: isMobile ? '60' : 'UNCAPPED'
 };
 
 let gameSettings = JSON.parse(localStorage.getItem('adventureSettings')) || defaultSettings;
@@ -79,9 +83,14 @@ let gameSettings = JSON.parse(localStorage.getItem('adventureSettings')) || defa
 function saveSettings() {
     localStorage.setItem('adventureSettings', JSON.stringify(gameSettings));
 }
-// Ensure graphics default is set if missing from old save
+
+// Ensure defaults are set if missing from old save
 if (!gameSettings.graphics) {
-    gameSettings.graphics = 'HIGH';
+    gameSettings.graphics = isMobile ? 'MEDIUM' : 'HIGH';
+    saveSettings();
+}
+if (!gameSettings.maxFPS) {
+    gameSettings.maxFPS = isMobile ? '60' : 'UNCAPPED';
     saveSettings();
 }
 
