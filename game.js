@@ -21,6 +21,11 @@ const CONFIG = {
     },
     ground: { height: 700 }, // Visual height of ground
     environment: {
+        cloud: {
+            height: 800,   // Cloud size
+            yOffset: -150,    // Move Up/Down (Negative = Up, Positive = Down)
+            speedFactor: 1.0 // Parallax speed (1.0 = moves with camera, 0.5 = slower)
+        },
         scrollSpeed: 0, // Dynamic scroll speed added
         baseSpeed: 10,  // Stays constant-ish in this logic, but we use player speed mostly
         trees: {
@@ -158,16 +163,23 @@ class SoundManager {
             // "Warm up" the audio element (Fix for iOS/Mobile requiring play inside event)
             if (this.bgMusic) {
                 this.bgMusic.play().then(() => {
-                    this.bgMusic.pause();
-                    this.bgMusic.currentTime = 0;
+                    // Only pause if we haven't started playing yet
+                    // This prevents the warmup from cancelling the actual game start music
+                    // if they happen on the same interaction.
+                    if (typeof gameState !== 'undefined' && gameState.state === 'PLAYING') {
+                        // Do nothing, let it play!
+                    } else {
+                        this.bgMusic.pause();
+                        this.bgMusic.currentTime = 0;
+                    }
                 }).catch((e) => {
                     console.log("Audio warmup failed (harmless):", e);
                 });
             }
 
-            ['click', 'touchstart', 'keydown'].forEach(e => document.removeEventListener(e, unlock));
+            ['click', 'touchstart', 'keydown'].forEach(e => document.removeEventListener(e, unlock, { capture: true }));
         };
-        ['click', 'touchstart', 'keydown'].forEach(e => document.addEventListener(e, unlock, { once: true }));
+        ['click', 'touchstart', 'keydown'].forEach(e => document.addEventListener(e, unlock, { once: true, capture: true }));
 
         // Load custom audio
         this.gameOverSound = new Audio('sound/We Have a.mp3');
@@ -190,6 +202,10 @@ class SoundManager {
         this.jamatMusic = new Audio('sound/jamat.mp3');
         this.jamatMusic.volume = Math.min(1.0, bossVol * 2.8); // 180% louder than default
         this.jamatMusic.loop = true;
+
+        this.fcardMusic = new Audio('sound/fcard.mp3');
+        this.fcardMusic.volume = Math.min(1.0, bossVol * 2.5); // Slightly quieter than Jamat
+        this.fcardMusic.loop = true;
 
         this.shotSound = new Audio('sound/shot.mp3');
         this.shotSound.volume = 0.4;
@@ -269,11 +285,28 @@ class SoundManager {
 
         const vol = (typeof gameSettings !== 'undefined' && gameSettings.volume !== undefined) ? gameSettings.volume / 100 : 0.5;
 
-        if (bossType === 'JAMAT' && this.jamatMusic) {
+        if (bossType === 'JAMAT' && this.fcardMusic && this.jamatMusic) {
+            // Sequence: fcard.mp3 (Intro) -> jamat.mp3 (Loop)
+
+            // Stop Jamat initially
+            this.jamatMusic.pause();
             this.jamatMusic.currentTime = 0;
-            this.jamatMusic.volume = Math.min(1.0, vol * 2.8); // 180% louder
-            this.jamatMusic.play().catch(e => console.log("Jamat Music play failed:", e));
-        } else if (this.bossMusic) {
+
+            // Setup FCard (Intro)
+            this.fcardMusic.currentTime = 0;
+            this.fcardMusic.loop = false; // Play only once
+            this.fcardMusic.volume = Math.min(1.0, vol * 2.5);
+
+            // Chain Jamat after FCard ends
+            this.fcardMusic.onended = () => {
+                this.jamatMusic.volume = Math.min(1.0, vol * 2.8);
+                this.jamatMusic.loop = true;
+                this.jamatMusic.play().catch(e => console.log("Jamat Music follow-up failed:", e));
+            };
+
+            this.fcardMusic.play().catch(e => console.log("FCard Music play failed:", e));
+
+        } else if (bossType === 'HASINA' && this.bossMusic) {
             // Default to Hasina
             this.bossMusic.currentTime = 0;
             this.bossMusic.volume = vol;
@@ -287,8 +320,13 @@ class SoundManager {
             this.bossMusic.currentTime = 0;
         }
         if (this.jamatMusic) {
-            this.jamatMusic.pause();
+            this.jamatMusic.pause(); // Just in case
             this.jamatMusic.currentTime = 0;
+        }
+        if (this.fcardMusic) {
+            this.fcardMusic.pause();
+            this.fcardMusic.currentTime = 0;
+            this.fcardMusic.onended = null; // Important: Stop the chain if boss defeated during intro
         }
 
         // Resume BG Music if game is active
@@ -502,6 +540,7 @@ const assets = {
     mc: 'assets/mc.png',
     base: 'assets/base.png',
     gbg: 'assets/gbg.png', // New background ground
+    cloud: 'assets/cloud.png', // New cloud asset
     khamba: 'assets/khamba.png',
     tree1: 'assets/tree 1.png',
     tree2: 'assets/tree2 .png',
@@ -518,6 +557,8 @@ const assets = {
     jamat: 'assets/special/jamat.png',
     helicopter: 'assets/special/helicopter.png'
 };
+
+
 const images = {};
 
 // Duplicate classes removed
@@ -1316,6 +1357,28 @@ class Environment {
         // All Y positions must use CONFIG.canvas.height (Logical 1080)
         const logicalH = CONFIG.canvas.height;
 
+        // 0. Clouds (Drawn BEHIND everything else)
+        // 0. Clouds
+        if (images.cloud) {
+            const cConf = (CONFIG.environment && CONFIG.environment.cloud) ? CONFIG.environment.cloud : { height: 1000, yOffset: 0, xOffset: 0, speedFactor: 1.0 };
+            const cloudH = cConf.height;
+            const scale = cloudH / images.cloud.height;
+            const tW = images.cloud.width * scale;
+
+            // Parallax Logic
+            const paraX = cameraX * (cConf.speedFactor !== undefined ? cConf.speedFactor : 1.0);
+
+            const startIdx = Math.floor(paraX / tW) * tW;
+            const endX = paraX + (canvas.width / gameScale) + tW;
+
+            for (let x = startIdx; x < endX; x += tW) {
+                // effectiveX = x - paraX + cameraX (Standard logic to map parallax space back to world space)
+                const drawX = x + (cameraX - paraX) + (cConf.xOffset || 0);
+                const drawY = cConf.yOffset || 0;
+                ctx.drawImage(images.cloud, drawX, drawY, tW + 1, cloudH);
+            }
+        }
+
         // 1. Ground BACKGROUND (The deep filler)
         if (images.gbg) {
             const gH = this.groundHeight;
@@ -1327,6 +1390,7 @@ class Environment {
                 ctx.drawImage(images.gbg, x, logicalH - gH, tW + 1, gH);
             }
         }
+
 
         // 2. Bg Trees (Drawn BEHIND Base)
         const tConf = CONFIG.environment.trees;
@@ -2224,12 +2288,15 @@ if (gameSettings.volume !== undefined && bgmVolume) {
 }
 
 
+// Initialize SoundManager EARLY to catch first interaction
+soundManager = new SoundManager();
+
 // Start
 loadAssets(() => {
     input = new InputHandler();
     player = new Player();
     environment = new Environment();
-    soundManager = new SoundManager();
+    // soundManager is already initialized
     particles = new ParticleSystem();
     requestAnimationFrame(gameLoop);
 
